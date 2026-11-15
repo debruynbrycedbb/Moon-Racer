@@ -1,0 +1,269 @@
+/* Moon Racer
+   Palette comes from the reference art: black space, grey regolith,
+   thruster cyan, hazard-paint yellow, kerb red. */
+:root {
+  --space: #05070a;
+  --panel: rgba(9, 12, 16, 0.82);
+  --line: rgba(190, 200, 210, 0.22);
+  --regolith: #b9bcc2;
+  --dust: #7d828b;
+  --cyan: #4fe3ff;
+  --hazard: #f4b21b;
+  --kerb: #e0322f;
+  --text: #eef1f4;
+  --display: 'Saira Stencil One', 'Saira Semi Condensed', sans-serif;
+  --ui: 'Saira Semi Condensed', system-ui, sans-serif;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--space);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 16px;
+  line-height: 1.4;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, p, ul { margin: 0; padding: 0; }
+ul { list-style: none; }
+button { font: inherit; color: inherit; cursor: pointer; }
+small { font-size: inherit; }
+
+#scene {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  display: block; visibility: hidden;
+}
+#scene.is-on { visibility: visible; }
+
+.screen {
+  position: fixed; inset: 0;
+  visibility: hidden; opacity: 0; pointer-events: none;
+  transition: opacity .5s ease, visibility 0s linear .5s;
+}
+.screen.is-active { visibility: visible; opacity: 1; transition: opacity .5s ease; }
+.screen.is-active > * { pointer-events: auto; }
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 46px; padding: 0 22px;
+  border: 1px solid var(--line); border-radius: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600; font-size: 15px; letter-spacing: .12em; text-transform: uppercase;
+  transition: background .15s, border-color .15s, color .15s, transform .15s;
+}
+.btn:hover { border-color: var(--regolith); background: rgba(255, 255, 255, 0.1); }
+.btn--go {
+  background: var(--hazard); border-color: var(--hazard); color: #14110a;
+  /* hazard stripe on the left edge, like the paint on the thruster pods */
+  background-image: repeating-linear-gradient(-45deg, #14110a 0 6px, transparent 6px 12px);
+  background-size: 18px 100%; background-repeat: no-repeat;
+  padding-left: 36px;
+}
+.btn--go:hover { background-color: #ffc93d; border-color: #ffc93d; transform: translateY(-1px); }
+.btn--go:disabled { background-color: #5b5f66; border-color: #5b5f66; color: #15171a; cursor: not-allowed; transform: none; }
+.btn--ghost { background: var(--panel); backdrop-filter: blur(6px); }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+
+/* ---------- 1. map ---------- */
+.map {
+  position: absolute; inset: 0; overflow: hidden;
+  background: #0b0d10; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.map.is-dragging { cursor: grabbing; }
+/* the rush towards the surface when a circuit is picked */
+.map.is-diving { transform: scale(7); transition: transform 1.3s cubic-bezier(.6, 0, .9, .4); }
+.map__world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.map__world img {
+  position: absolute; display: block; max-width: none;
+  pointer-events: none; -webkit-user-drag: none;
+}
+.map__pins { position: absolute; inset: 0; pointer-events: none; }
+/* soft vignette so the interface reads on the bright highlands */
+.map::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(5, 7, 10, .55) 100%),
+    linear-gradient(180deg, rgba(5, 7, 10, .65) 0, transparent 22%, transparent 70%, rgba(5, 7, 10, .7) 100%);
+}
+
+.pin {
+  position: absolute; left: 0; top: 0; z-index: 2;
+  width: 44px; height: 44px; margin: -22px 0 0 -22px; padding: 0;
+  border: 0; background: none; pointer-events: auto; will-change: transform;
+}
+.pin__dot {
+  position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px;
+  border-radius: 50%; background: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(5, 7, 10, .8), 0 0 18px 4px rgba(79, 227, 255, .8);
+}
+.pin__ring {
+  position: absolute; inset: 4px; border-radius: 50%;
+  border: 2px solid var(--cyan); opacity: 0;
+  animation: ping 2.4s cubic-bezier(.2, .6, .3, 1) infinite;
+}
+.pin__ring + .pin__ring { animation-delay: 1.2s; }
+@keyframes ping {
+  0% { transform: scale(.4); opacity: .9; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+.pin__label {
+  position: absolute; left: 44px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 10px; white-space: nowrap;
+  padding: 6px 12px 6px 0; background: var(--panel); border: 1px solid var(--line);
+  font-weight: 600; font-size: 14px; letter-spacing: .1em; text-transform: uppercase;
+}
+.pin__label b {
+  font-family: var(--display); font-weight: 400; font-size: 17px; line-height: 1;
+  padding: 6px 8px; background: var(--hazard); color: #14110a; letter-spacing: 0;
+}
+.pin:hover .pin__label, .pin:focus-visible .pin__label { border-color: var(--cyan); }
+
+.brand { position: absolute; left: clamp(16px, 3vw, 40px); top: clamp(14px, 2.6vw, 34px); pointer-events: none !important; }
+.brand__name {
+  font-family: var(--display); font-weight: 400; text-transform: uppercase;
+  font-size: clamp(34px, 5.2vw, 76px); line-height: .92; letter-spacing: .01em;
+  text-shadow: 0 2px 24px rgba(5, 7, 10, .9);
+}
+.brand__sub {
+  margin-top: 8px; padding-left: 3px;
+  font-weight: 500; font-size: clamp(12px, 1.1vw, 15px); letter-spacing: .32em; text-transform: uppercase;
+  color: var(--hazard);
+}
+
+.map-readout {
+  position: absolute; left: clamp(16px, 3vw, 40px); bottom: calc(clamp(16px, 2.6vw, 34px) + var(--safe-b));
+  display: flex; gap: 18px; font-variant-numeric: tabular-nums;
+  font-size: 14px; letter-spacing: .14em; color: var(--regolith); pointer-events: none !important;
+}
+
+.map-zoom {
+  position: absolute; right: clamp(16px, 3vw, 40px); top: clamp(14px, 2.6vw, 34px);
+  display: flex; flex-direction: column; border: 1px solid var(--line); background: var(--panel); backdrop-filter: blur(6px);
+}
+.map-zoom button {
+  width: 44px; height: 44px; border: 0; background: none; font-size: 24px; line-height: 1; font-weight: 500;
+}
+.map-zoom button + button { border-top: 1px solid var(--line); }
+.map-zoom button:hover { background: rgba(255, 255, 255, .1); color: var(--cyan); }
+
+.circuit-card {
+  position: absolute; right: clamp(16px, 3vw, 40px); bottom: calc(clamp(16px, 2.6vw, 34px) + var(--safe-b));
+  width: min(340px, calc(100vw - 32px));
+  padding: 20px 22px 18px; background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--cyan);
+  backdrop-filter: blur(8px);
+}
+.circuit-card__eyebrow, .show-panel__eyebrow {
+  font-size: 12px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; color: var(--cyan);
+}
+.circuit-card__name {
+  margin-top: 6px; font-family: var(--display); font-weight: 400; font-size: 30px; line-height: 1; text-transform: uppercase;
+}
+.circuit-card__meta { margin-top: 8px; font-size: 15px; color: var(--regolith); font-variant-numeric: tabular-nums; }
+.circuit-card .btn { width: 100%; margin-top: 16px; }
+.circuit-card__hint { margin-top: 10px; font-size: 13px; color: var(--dust); }
+
+/* ---------- 2. showroom ---------- */
+.back-btn { position: absolute; left: clamp(16px, 3vw, 40px); top: clamp(14px, 2.6vw, 34px); }
+.show-panel {
+  position: absolute; left: 50%; bottom: calc(clamp(16px, 4vh, 44px) + var(--safe-b)); transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px)); padding: 18px 22px 16px; text-align: center;
+  background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--cyan); backdrop-filter: blur(8px);
+}
+.show-panel__row { display: flex; align-items: center; gap: 12px; margin: 10px 0 14px; }
+.show-panel__car { flex: 1; min-width: 0; }
+.show-panel__car h2 {
+  font-family: var(--display); font-weight: 400; text-transform: uppercase;
+  font-size: clamp(24px, 4.4vw, 38px); line-height: 1;
+}
+.show-panel__spec { margin-top: 8px; font-size: 15px; letter-spacing: .14em; text-transform: uppercase; color: var(--regolith); }
+.show-panel__spec span { font-size: 26px; font-weight: 600; color: var(--hazard); letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.arrow {
+  flex: none; width: 48px; height: 48px; border: 1px solid var(--line); border-radius: 2px;
+  background: rgba(255, 255, 255, .04); font-size: 30px; line-height: 1; padding-bottom: 4px;
+}
+.arrow:hover { border-color: var(--cyan); color: var(--cyan); }
+.show-panel .btn--go { width: 100%; }
+.show-panel__hint { margin-top: 10px; font-size: 13px; color: var(--dust); }
+
+/* ---------- 3. driving HUD ---------- */
+#hud > * { pointer-events: none !important; }
+.hud__top {
+  position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+  padding: clamp(14px, 2.4vw, 30px) clamp(16px, 3vw, 40px);
+  background: linear-gradient(180deg, rgba(5, 7, 10, .7), transparent);
+}
+.hud__car span { display: block; font-family: var(--display); font-size: clamp(20px, 2.2vw, 28px); line-height: 1; text-transform: uppercase; }
+.hud__car small { display: block; margin-top: 6px; font-size: 12px; letter-spacing: .26em; text-transform: uppercase; color: var(--cyan); }
+.hud__keys { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 16px; font-size: 13px; color: var(--regolith); max-width: 60vw; }
+kbd {
+  font: inherit; font-weight: 600; font-size: 12px; letter-spacing: .06em; color: var(--text);
+  padding: 2px 6px; border: 1px solid var(--line); border-radius: 2px; background: rgba(9, 12, 16, .6);
+}
+.hud__speed {
+  position: absolute; right: clamp(16px, 3vw, 40px); bottom: calc(clamp(14px, 2.4vw, 30px) + var(--safe-b));
+  text-align: right; line-height: 1; text-shadow: 0 2px 18px rgba(5, 7, 10, .9);
+}
+.hud__speed span {
+  display: block; font-family: var(--display); font-size: clamp(64px, 9vw, 128px); font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+}
+.hud__speed small { display: block; margin-top: 2px; font-size: 14px; font-weight: 600; letter-spacing: .34em; text-transform: uppercase; color: var(--hazard); }
+.hud__minimap {
+  position: absolute; left: clamp(16px, 3vw, 40px); bottom: calc(clamp(14px, 2.4vw, 30px) + var(--safe-b));
+  width: clamp(110px, 12vw, 170px); height: auto; overflow: visible;
+  filter: drop-shadow(0 2px 8px rgba(5, 7, 10, .9));
+}
+#minimap-track { fill: none; stroke: var(--regolith); stroke-width: 2.2; stroke-linejoin: round; opacity: .85; }
+#minimap-car { fill: var(--cyan); stroke: var(--space); stroke-width: 1; }
+.hud__note {
+  position: absolute; left: 50%; top: 22%; transform: translateX(-50%);
+  padding: 8px 16px; background: var(--panel); border-left: 3px solid var(--hazard);
+  font-weight: 600; letter-spacing: .16em; text-transform: uppercase; font-size: 14px;
+  opacity: 0; transition: opacity .3s;
+}
+.hud__note.is-on { opacity: 1; }
+
+/* ---------- menu ---------- */
+.menu { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(5, 7, 10, .6); backdrop-filter: blur(6px); z-index: 20; }
+.menu[hidden] { display: none; }
+.menu__box { width: min(320px, calc(100vw - 32px)); padding: 26px 24px; display: grid; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--cyan); }
+.menu__box h2 { font-family: var(--display); font-weight: 400; font-size: 34px; line-height: 1; text-transform: uppercase; margin-bottom: 6px; }
+
+/* ---------- fade / loading veil ---------- */
+.veil {
+  position: fixed; inset: 0; z-index: 30; display: grid; place-content: center; gap: 14px; justify-items: center;
+  background: var(--space); opacity: 0; pointer-events: none; transition: opacity .6s ease;
+}
+.veil.is-on { opacity: 1; pointer-events: auto; }
+.veil__text { font-size: 14px; font-weight: 600; letter-spacing: .3em; text-transform: uppercase; color: var(--regolith); min-height: 1.4em; text-align: center; padding: 0 16px; }
+.veil__bar { width: min(260px, 60vw); height: 3px; background: rgba(255, 255, 255, .12); opacity: 0; transition: opacity .3s; }
+.veil.is-loading .veil__bar { opacity: 1; }
+.veil__bar i { display: block; height: 100%; width: 0; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); transition: width .2s; }
+
+.noscript { position: fixed; inset: auto 0 0 0; padding: 16px; text-align: center; background: var(--kerb); z-index: 40; }
+
+/* ---------- small screens ---------- */
+@media (max-width: 720px) {
+  .circuit-card { left: 16px; right: 16px; width: auto; padding: 16px 18px 14px; }
+  .circuit-card__name { font-size: 26px; }
+  .circuit-card__hint { display: none; }
+  .map-readout { display: none; }
+  .hud__keys { display: none; }
+  .pin__label { font-size: 12px; }
+  .show-panel__eyebrow { font-size: 11px; letter-spacing: .16em; }
+  .show-panel__spec { font-size: 13px; letter-spacing: .08em; }
+  .show-panel__spec span { font-size: 22px; }
+}
+@media (max-height: 520px) {
+  .show-panel { padding: 12px 18px; }
+  .show-panel__row { margin: 6px 0 10px; }
+  .show-panel__hint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pin__ring { animation: none; opacity: .5; transform: scale(1.4); }
+  .screen, .veil { transition-duration: .01s; }
+}

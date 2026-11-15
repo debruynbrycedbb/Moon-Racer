@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Moon Racer: drive a floating circuit above the Moon</title>
+<meta name="description" content="Explore a map of the Moon, pick a circuit and drive a supercar on a race track held above the lunar surface by rocket thrusters.">
+<meta name="theme-color" content="#05070a">
+<meta property="og:title" content="Moon Racer">
+<meta property="og:description" content="Pick a circuit on the Moon map and drive a track that floats above the surface on rocket thrusters.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2305070a'/%3E%3Ccircle cx='16' cy='14' r='8' fill='%23b9bcc2'/%3E%3Cpath d='M13 24h6l-3 7z' fill='%234fe3ff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@400;500;600&family=Saira+Stencil+One&display=swap" rel="stylesheet">
+<link rel="preload" as="image" href="assets/map/base.webp">
+<link rel="stylesheet" href="css/style.css?v=1">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- 3D view (track, showroom, driving) -->
+<canvas id="scene" aria-hidden="true"></canvas>
+
+<!-- 1. Landing: the Moon map -->
+<main id="map-screen" class="screen is-active">
+  <div id="map" class="map" tabindex="0" role="application" aria-label="Map of the Moon. Drag to move, scroll or pinch to zoom, arrow keys to move, plus and minus to zoom.">
+    <div class="map__world" id="map-world"></div>
+    <div class="map__pins" id="map-pins"></div>
+  </div>
+
+  <header class="brand">
+    <h1 class="brand__name">Moon Racer</h1>
+    <p class="brand__sub">Circuit map of the Moon</p>
+  </header>
+
+  <p class="map-readout" aria-hidden="true">
+    <span id="readout-lat">0.00° N</span>
+    <span id="readout-lon">0.00° E</span>
+  </p>
+
+  <div class="map-zoom">
+    <button type="button" id="zoom-in" aria-label="Zoom in">+</button>
+    <button type="button" id="zoom-out" aria-label="Zoom out">−</button>
+  </div>
+
+  <aside class="circuit-card">
+    <p class="circuit-card__eyebrow">1 circuit open</p>
+    <h2 class="circuit-card__name">Tranquility Circuit</h2>
+    <p class="circuit-card__meta">Mare Tranquillitatis · 0.67° N, 23.47° E · 3.3 km</p>
+    <button type="button" class="btn btn--go" id="go-circuit">Go to circuit</button>
+    <p class="circuit-card__hint">Or drag the map and pick the marker.</p>
+  </aside>
+</main>
+
+<!-- 2. Showroom: choose a car -->
+<section id="showroom" class="screen" aria-label="Choose a car">
+  <button type="button" class="btn btn--ghost back-btn" id="back-to-map">← Moon map</button>
+  <div class="show-panel">
+    <p class="show-panel__eyebrow">Tranquility Circuit · choose your car</p>
+    <div class="show-panel__row">
+      <button type="button" class="arrow" id="car-prev" aria-label="Previous car">‹</button>
+      <div class="show-panel__car">
+        <h2 id="car-name">&nbsp;</h2>
+        <p class="show-panel__spec"><span id="car-speed">–</span> <small>km/h top speed</small></p>
+      </div>
+      <button type="button" class="arrow" id="car-next" aria-label="Next car">›</button>
+    </div>
+    <button type="button" class="btn btn--go" id="drive-btn">Drive</button>
+    <p class="show-panel__hint" id="drive-hint">Arrow keys or W A S D to drive</p>
+  </div>
+</section>
+
+<!-- 3. Driving HUD -->
+<section id="hud" class="screen" aria-label="Driving">
+  <div class="hud__top">
+    <p class="hud__car"><span id="hud-car">&nbsp;</span><small>Free drive · Tranquility Circuit</small></p>
+    <ul class="hud__keys">
+      <li><kbd>W A S D</kbd> / arrows drive</li>
+      <li><kbd>Space</kbd> handbrake</li>
+      <li><kbd>C</kbd> camera</li>
+      <li><kbd>R</kbd> reset</li>
+      <li><kbd>Esc</kbd> menu</li>
+    </ul>
+  </div>
+  <svg class="hud__minimap" id="minimap" viewBox="0 0 100 100" aria-hidden="true">
+    <path id="minimap-track" d=""/>
+    <circle id="minimap-car" r="3.2"/>
+  </svg>
+  <p class="hud__speed"><span id="hud-speed">0</span><small>km/h</small></p>
+  <p class="hud__note" id="hud-note" role="status"></p>
+</section>
+
+<!-- Pause menu -->
+<div id="menu" class="menu" hidden>
+  <div class="menu__box" role="dialog" aria-modal="true" aria-labelledby="menu-title">
+    <h2 id="menu-title">Paused</h2>
+    <button type="button" class="btn btn--go" id="menu-resume">Resume</button>
+    <button type="button" class="btn" id="menu-car">Change car</button>
+    <button type="button" class="btn" id="menu-map">Moon map</button>
+  </div>
+</div>
+
+<!-- Fade + loading -->
+<div id="veil" class="veil" aria-live="polite">
+  <p class="veil__text" id="veil-text"></p>
+  <div class="veil__bar"><i id="veil-bar"></i></div>
+</div>
+
+<noscript><p class="noscript">Moon Racer needs JavaScript to run.</p></noscript>
+<script type="module" src="js/main.js?v=1"></script>
+</body>
+</html>
