@@ -234,6 +234,11 @@ kbd {
   display: block; font-family: var(--display); font-size: clamp(64px, 9vw, 128px); font-variant-numeric: tabular-nums; letter-spacing: -.01em;
 }
 .hud__speed small { display: block; margin-top: 2px; font-size: 14px; font-weight: 600; letter-spacing: .34em; text-transform: uppercase; color: var(--hazard); }
+.hud__gear {
+  display: inline-block; min-width: 1.6em; margin-left: 10px; padding: 1px 0 1px .34em; border: 1px solid var(--hazard);
+  font-family: var(--display); font-weight: 400; font-size: 18px; letter-spacing: .34em; text-align: center; color: var(--text);
+}
+.hud__gear[hidden] { display: none; }
 .hud__minimap {
   position: absolute; left: clamp(16px, 3vw, 40px); bottom: calc(clamp(14px, 2.4vw, 30px) + var(--safe-b));
   width: clamp(110px, 12vw, 170px); height: auto; overflow: visible;
@@ -302,6 +307,11 @@ kbd {
 .menu[hidden] { display: none; }
 .menu__box { width: min(320px, calc(100vw - 32px)); padding: 26px 24px; display: grid; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--cyan); }
 .menu__box .link-btn { justify-self: center; margin-top: 2px; }
+.menu__vol { display: grid; gap: 6px; padding: 8px 2px 4px; font-size: 13px; font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: var(--regolith); }
+.menu__vol span { display: flex; justify-content: space-between; }
+.menu__vol em { font-style: normal; letter-spacing: .06em; color: var(--text); font-variant-numeric: tabular-nums; }
+.menu__vol input { width: 100%; margin: 0; accent-color: var(--cyan); }
+.menu__vol input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
 .menu__box h2 { font-family: var(--display); font-weight: 400; font-size: 34px; line-height: 1; text-transform: uppercase; margin-bottom: 6px; }
 
 /* ---------- fade / loading veil ---------- */

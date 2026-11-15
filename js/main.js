@@ -1,6 +1,7 @@
 // Moon Racer: screen flow.  map -> (dive) -> showroom -> drive
 import { createMap, lonLatToWorld, worldToLonLat } from './map.js';
-import { initGamepad, onButton, pad } from './gamepad.js?v=3';
+import { initGamepad, onButton, pad } from './gamepad.js?v=4';
+import { createEngineSound } from './engine-sound.js?v=4';
 import { formatTime, formatDelta } from './laps.js?v=3';
 
 // The one circuit for now. Position = Tranquility Base (Apollo 11 landing site).
@@ -41,11 +42,17 @@ $('credits-open').addEventListener('click', () => $('credits').showModal());
 // (on a phone the marker sits left of centre so its label fits on screen)
 map.view.x = spot.x + (window.innerWidth < 720 ? 480 : -500); map.view.y = spot.y; map.refresh();
 
+// ---------- engine sound (Ferrari only; silent if audio is unavailable) ----------
+const engine = createEngineSound();
+window.__engine = engine;                 // for testing in the console
+// browsers only allow sound after a click or key press on the page
+for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => engine.unlock(), { capture: true });
+
 // ---------- 3D game (loaded in the background once the map is up) ----------
 let game = null, gamePromise = null, progress = 0, busy = false, state = 'map';
 function loadGame() {
   if (!gamePromise) {
-    gamePromise = import('./game.js?v=3')
+    gamePromise = import('./game.js?v=4')
       .then(m => m.createGame({
         canvas,
         onProgress: p => { progress = p; veilBar.style.width = Math.round(p * 100) + '%'; },
@@ -104,6 +111,7 @@ async function backToMap(force) {
   if (busy && !force) return;
   busy = true;
   closeMenu();
+  engine.stop();
   await setVeil(true);
   if (game) game.stop();
   canvas.classList.remove('is-on');
@@ -142,6 +150,7 @@ function setCar(i) {
   $('car-speed').textContent = c.topSpeed;
   $('hud-car').textContent = c.name;
   game.showCar(carIndex);
+  engine.preload(c.id);                 // fetch the engine sounds while you look at the car
   showBest();
 }
 function showBest() {
@@ -156,19 +165,26 @@ $('drive-btn').addEventListener('click', startDrive);
 async function startDrive() {
   if (busy || state !== 'showroom') return;
   busy = true;
+  engine.unlock();
   await setVeil(true);
   game.drive(carIndex);
   buildMinimap();
   state = 'drive';
   show('hud');
+  const id = game.cars[carIndex].id;
+  hudGear.hidden = !engine.has(id);
+  engine.start(id);
   setVeil(false);
   busy = false;
+  // a controller press alone may not count as "the player interacted", so sound can still be locked
+  if (engine.has(id)) setTimeout(() => { if (engine.blocked && state === 'drive') showNote('Click or press any key to turn on the sound', 3200); }, 900);
 }
 
 async function toShowroom() {
   if (busy) return;
   busy = true;
   closeMenu();
+  engine.stop();
   await setVeil(true);
   game.showroom(carIndex);
   showBest();
@@ -179,8 +195,8 @@ async function toShowroom() {
 }
 
 // ---------- HUD ----------
-const hudSpeed = $('hud-speed'), miniCar = $('minimap-car'), note = $('hud-note');
-let mini = null, noteTimer = 0, lastSpeed = -1;
+const hudSpeed = $('hud-speed'), hudGear = $('hud-gear'), miniCar = $('minimap-car'), note = $('hud-note');
+let mini = null, noteTimer = 0, lastSpeed = -1, lastGear = '';
 function buildMinimap() {
   if (mini) return;
   const pts = game.trackOutline;                       // [[x,z],...]
@@ -194,6 +210,8 @@ function buildMinimap() {
 function updateHud(h) {
   const kmh = Math.round(h.speed * 3.6);
   if (kmh !== lastSpeed) { hudSpeed.textContent = kmh; lastSpeed = kmh; }
+  const gear = engine.update(h);
+  if (gear && gear !== lastGear) { hudGear.textContent = gear; lastGear = gear; }
   if (h.lap) updateLapHud(h.lap);
   if (mini) {
     miniCar.setAttribute('cx', ((h.x - mini.x0) * mini.s).toFixed(1));
@@ -268,8 +286,21 @@ function showNote(text, ms = 1600) {
 
 // ---------- pause menu ----------
 const menu = $('menu');
-function openMenu() { menu.hidden = false; game.pause(true); showGhostLabel(); $('menu-clear').textContent = 'Clear best laps'; $('menu-resume').focus(); }
-function closeMenu() { if (menu.hidden) return; menu.hidden = true; if (game) game.pause(false); }
+function openMenu() { menu.hidden = false; game.pause(true); engine.pause(true); showVolume(); showGhostLabel(); $('menu-clear').textContent = 'Clear best laps'; $('menu-resume').focus(); }
+function closeMenu() { if (menu.hidden) return; menu.hidden = true; if (game) game.pause(false); engine.pause(false); }
+const volInput = $('menu-volume');
+function showVolume() {
+  const v = engine.muted ? 0 : Math.round(engine.volume * 100);
+  volInput.value = v;
+  $('menu-volume-val').textContent = engine.muted ? 'muted' : v + '%';
+}
+volInput.addEventListener('input', () => { engine.volume = volInput.value / 100; showVolume(); });
+function nudgeVolume(dir) { engine.volume = Math.round(engine.volume * 20 + dir) / 20; showVolume(); }
+function toggleMute() {
+  engine.muted = !engine.muted;
+  if (!engine.muted && engine.volume === 0) engine.volume = 0.5;
+  showNote(engine.muted ? 'Sound off (M)' : 'Sound on', 1400);
+}
 $('menu-resume').addEventListener('click', closeMenu);
 $('menu-car').addEventListener('click', toShowroom);
 $('menu-map').addEventListener('click', () => backToMap());
@@ -306,6 +337,7 @@ window.addEventListener('keydown', e => {
   } else if (state === 'drive' && !busy && menu.hidden && e.code === 'KeyT' && !e.repeat) {
     restartLap();
   }
+  if (e.code === 'KeyM' && !e.repeat && state === 'drive') { toggleMute(); if (!menu.hidden) showVolume(); }
 });
 
 // ---------- game controller (PS5 DualSense and other standard pads) ----------
@@ -318,7 +350,7 @@ function activeLayer() {
 function moveFocus(dir) {
   const layer = activeLayer();
   if (!layer) return;
-  const list = [...layer.querySelectorAll('button:not([disabled])')].filter(b => b.offsetParent !== null);
+  const list = [...layer.querySelectorAll('button:not([disabled]), input[type=range]')].filter(b => b.offsetParent !== null);
   if (!list.length) return;
   const i = list.indexOf(document.activeElement);
   list[(i < 0 ? 0 : i + dir + list.length) % list.length].focus();
@@ -326,6 +358,7 @@ function moveFocus(dir) {
 function confirmPress() {
   const layer = activeLayer(), el = document.activeElement;
   if (layer && el && el.tagName === 'BUTTON' && layer.contains(el)) { el.click(); return; }
+  if (el === volInput) return;                       // the slider uses left/right; ✕ does nothing there
   if (credits.open) credits.close();
   else if (!menu.hidden) closeMenu();
   else if (state === 'map') enterCircuit();
@@ -351,6 +384,7 @@ onButton(name => {
   else if (name === 'circle') goBack();
   else if (name === 'up') moveFocus(-1);
   else if (name === 'down') moveFocus(1);
+  else if (document.activeElement === volInput && (name === 'left' || name === 'right')) nudgeVolume(name === 'left' ? -1 : 1)
   else if (state === 'showroom' && menu.hidden && (name === 'left' || name === 'right')) setCar(carIndex + (name === 'left' ? -1 : 1));
 });
 initGamepad({

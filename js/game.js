@@ -442,6 +442,8 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
   // ---------- state ----------
   let state = 'idle', paused = false, running = false, raf = 0, last = 0, time = 0;
   let camMode = 'chase', camYaw = 0, safeIdx = 0, fallTimer = 0;
+  // free look in the chase camera (right stick): offsets around the car, and how long the stick has been let go
+  const look = { yaw: 0, pitch: 0, idle: 9 };
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
   const keys = new Set();
   let intro = null;
@@ -484,7 +486,7 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
     const heading = Math.atan2(c.tx, c.tz);
     veh.reset(c.x, c.y + 0.02, c.z, heading);
     safeIdx = index; fallTimer = 0;
-    camYaw = heading;
+    camYaw = heading; look.yaw = 0; look.pitch = 0; look.idle = 9;
     camPos.set(c.x - Math.sin(heading) * 7, c.y + 2.4, c.z - Math.cos(heading) * 7);
     syncCar(0);
   }
@@ -547,7 +549,7 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
     }
     syncCar(dt);
     updateGhost(dt);
-    onHud({ speed: veh.speed, x: veh.x, z: veh.z, lap: laps.view() });
+    onHud({ speed: veh.speed, vF: veh.vF, throttle: input.throttle, brake: input.brake, frozen: laps.frozen, x: veh.x, z: veh.z, lap: laps.view() });
   }
 
   const _fwd = new THREE.Vector3(), _eye = new THREE.Vector3(), _q = new THREE.Quaternion(), _flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
@@ -569,17 +571,43 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
     while (d > Math.PI) d -= 2 * Math.PI;
     while (d < -Math.PI) d += 2 * Math.PI;
     camYaw += d * (1 - Math.exp(-6.5 * dt));
+    updateLook(dt);
+    const yaw = camYaw + look.yaw, cp = Math.cos(look.pitch), sp = Math.sin(look.pitch);
     const dist = 5.9 + 2.3 * k, height = 1.95 + 0.45 * k;
-    const tx = veh.x - Math.sin(camYaw) * dist, tz = veh.z - Math.cos(camYaw) * dist, ty = veh.y + height;
+    const tx = veh.x - Math.sin(yaw) * dist * cp, tz = veh.z - Math.cos(yaw) * dist * cp, ty = veh.y + height + dist * sp;
     camPos.x = tx; camPos.z = tz;
     camPos.y += (ty - camPos.y) * (1 - Math.exp(-9 * dt));
     if (!veh.grounded && fallTimer > 0.35) camPos.y = Math.max(camPos.y, veh.lastGroundY + 3);   // watch the fall from the deck
     camera.position.copy(camPos);
+    // look a little ahead of the car normally; at the car itself when swung round to the side or front
     _fwd.set(Math.sin(veh.heading), 0, Math.cos(veh.heading));
-    camLook.set(veh.x, veh.y + 1.05, veh.z).addScaledVector(_fwd, 2.5);
+    camLook.set(veh.x, veh.y + 1.05, veh.z).addScaledVector(_fwd, 2.5 * Math.max(0, Math.cos(look.yaw)));
     camera.up.set(0, 1, 0);
     camera.lookAt(camLook);
     setLens(58 + 20 * Math.pow(k, 0.8), 0.4);
+  }
+  // right stick moves the camera round the car (right = to the car's right side, full push = in front,
+  // looking back) and up/down over it. Let go and it glides back behind the car after half a second.
+  function updateLook(dt) {
+    const p = readPad && readPad();
+    const x = p && p.connected ? p.lookX : 0, y = p && p.connected ? p.lookY : 0;
+    let ty = 0, tp = 0, rate = 9;
+    if (x || y) {
+      look.idle = 0;
+      ty = x * Math.PI;
+      tp = y > 0 ? y * 0.95 : y * 0.16;
+    } else {
+      look.idle += dt;
+      if (look.idle < 0.5) { ty = look.yaw; tp = look.pitch; }
+      rate = 4;
+    }
+    // go the short way round when the stick swaps from full left to full right
+    let dy = ty - look.yaw;
+    if (Math.abs(dy) > Math.PI) dy -= Math.sign(dy) * 2 * Math.PI;
+    const e = 1 - Math.exp(-rate * dt);
+    look.yaw += dy * e;
+    if (look.yaw > Math.PI) look.yaw -= 2 * Math.PI; else if (look.yaw < -Math.PI) look.yaw += 2 * Math.PI;
+    look.pitch += (tp - look.pitch) * e;
   }
   function setLens(fov, near) {
     if (Math.abs(camera.fov - fov) > 0.01 || camera.near !== near) {
@@ -676,7 +704,7 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
   onProgress(1);
 
   const api = {
-    cars: CARS.map(c => ({ name: c.name, topSpeed: c.topSpeed })),
+    cars: CARS.map(c => ({ id: c.id, name: c.name, topSpeed: c.topSpeed })),
     trackOutline: track.outline,
     start() { if (running) return; running = true; resize(); last = performance.now(); raf = requestAnimationFrame(frame); },
     stop() { running = false; cancelAnimationFrame(raf); keys.clear(); state = 'idle'; paused = false; laps.stop(); setCamMode('chase'); },

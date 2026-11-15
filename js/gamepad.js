@@ -2,16 +2,16 @@
 // browser reports in the "standard" layout, such as Xbox pads).
 //   L2 brake / reverse, R2 throttle (pressure-sensitive), left stick steer,
 //   Square handbrake, Triangle camera, Circle reset (Back in menus), Cross confirm,
-//   Options pause, D-pad move between buttons and change car.
+//   Options pause, D-pad move between buttons and change car, right stick looks around the car.
 
 export const BUTTONS = {
   cross: 0, circle: 1, square: 2, triangle: 3, l1: 4, r1: 5, l2: 6, r2: 7,
   create: 8, options: 9, l3: 10, r3: 11, up: 12, down: 13, left: 14, right: 15, ps: 16,
 };
-const STICK_DEADZONE = 0.08, TRIGGER_DEADZONE = 0.04;
+const STICK_DEADZONE = 0.08, LOOK_DEADZONE = 0.14, TRIGGER_DEADZONE = 0.04;
 
 const listeners = new Set();
-const state = { connected: false, name: '', throttle: 0, brake: 0, steer: 0, handbrake: false };
+const state = { connected: false, name: '', throttle: 0, brake: 0, steer: 0, handbrake: false, lookX: 0, lookY: 0 };
 let held = [], raf = 0, timer = 0;
 
 // press(buttonName) is called once each time a button goes down
@@ -30,7 +30,7 @@ const btn = (g, i) => { const b = g.buttons[i]; return b ? (typeof b === 'object
 function poll() {
   const g = pick();
   if (!g) {
-    if (state.connected) Object.assign(state, { connected: false, throttle: 0, brake: 0, steer: 0, handbrake: false });
+    if (state.connected) Object.assign(state, { connected: false, throttle: 0, brake: 0, steer: 0, handbrake: false, lookX: 0, lookY: 0 });
     held = [];
     return;
   }
@@ -42,6 +42,9 @@ function poll() {
   const x = dead(g.axes[0] || 0, STICK_DEADZONE);
   state.steer = -Math.sign(x) * Math.pow(Math.abs(x), 1.4);     // the game's steering is "left = positive"
   state.handbrake = btn(g, BUTTONS.square) > 0.5;
+  // right stick: x right = +1, y up = +1 (the browser reports up as negative)
+  state.lookX = dead(g.axes[2] || 0, LOOK_DEADZONE);
+  state.lookY = -dead(g.axes[3] || 0, LOOK_DEADZONE);
   for (const [name, i] of Object.entries(BUTTONS)) {
     const down = btn(g, i) > 0.5;
     if (down && !held[i]) for (const fn of listeners) fn(name);
