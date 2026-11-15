@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@400;500;600&family=Saira+Stencil+One&display=swap" rel="stylesheet">
 <link rel="preload" as="image" href="assets/map/base.webp">
-<link rel="stylesheet" href="css/style.css?v=2">
+<link rel="stylesheet" href="css/style.css?v=3">
 <script type="importmap">
 {
   "imports": {
@@ -71,6 +71,7 @@
       <div class="show-panel__car">
         <h2 id="car-name">&nbsp;</h2>
         <p class="show-panel__spec"><span id="car-speed">–</span> <small>km/h top speed</small></p>
+        <p class="show-panel__best" id="car-best">No lap time yet</p>
       </div>
       <button type="button" class="arrow" id="car-next" aria-label="Next car">›</button>
     </div>
@@ -82,15 +83,31 @@
 <!-- 3. Driving HUD -->
 <section id="hud" class="screen" aria-label="Driving">
   <div class="hud__top">
-    <p class="hud__car"><span id="hud-car">&nbsp;</span><small>Free drive · Tranquility Circuit</small></p>
-    <ul class="hud__keys">
+    <p class="hud__car"><span id="hud-car">&nbsp;</span><small>Time trial · Tranquility Circuit</small></p>
+    <ul class="hud__keys" id="hud-keys">
       <li><kbd>W A S D</kbd> / arrows drive</li>
       <li><kbd>Space</kbd> handbrake</li>
       <li><kbd>C</kbd> camera</li>
       <li><kbd>R</kbd> reset</li>
+      <li><kbd>T</kbd> restart lap</li>
       <li><kbd>Esc</kbd> menu</li>
     </ul>
+    <ul class="hud__keys" id="hud-pad" hidden>
+      <li><kbd>R2</kbd> / <kbd>L2</kbd> drive</li>
+      <li><kbd>□</kbd> handbrake</li>
+      <li><kbd>△</kbd> camera</li>
+      <li><kbd>○</kbd> reset</li>
+      <li><kbd>Create</kbd> restart lap</li>
+      <li><kbd>Options</kbd> menu</li>
+    </ul>
   </div>
+  <div class="hud__lap" id="hud-lap">
+    <p class="lap__clock" id="lap-clock">0:00.000</p>
+    <p class="lap__meta"><span id="lap-no">Lap 1</span><span class="lap__void">Void</span><span>Best <b id="lap-best">–</b></span></p>
+    <ol class="lap__sectors" id="lap-sectors" aria-label="Sectors"><li></li><li></li><li></li></ol>
+    <p class="hud__split" id="hud-split" aria-live="polite"></p>
+  </div>
+  <div class="hud__lights" id="hud-lights" hidden><i></i><i></i><i></i></div>
   <svg class="hud__minimap" id="minimap" viewBox="0 0 100 100" aria-hidden="true">
     <path id="minimap-track" d=""/>
     <circle id="minimap-car" r="3.2"/>
@@ -104,8 +121,11 @@
   <div class="menu__box" role="dialog" aria-modal="true" aria-labelledby="menu-title">
     <h2 id="menu-title">Paused</h2>
     <button type="button" class="btn btn--go" id="menu-resume">Resume</button>
+    <button type="button" class="btn" id="menu-restart">Restart lap</button>
+    <button type="button" class="btn" id="menu-ghost">Ghost: on</button>
     <button type="button" class="btn" id="menu-car">Change car</button>
     <button type="button" class="btn" id="menu-map">Moon map</button>
+    <button type="button" class="link-btn" id="menu-clear">Clear best laps</button>
   </div>
 </div>
 
@@ -132,6 +152,6 @@
 </div>
 
 <noscript><p class="noscript">Moon Racer needs JavaScript to run.</p></noscript>
-<script type="module" src="js/main.js?v=2"></script>
+<script type="module" src="js/main.js?v=3"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 
 A 3D driving game in the browser. You start on a draggable map of the Moon, pick a circuit, and drive a supercar on a race track that floats above the lunar surface on rocket thrusters.
 
-**Flow:** Moon map → dive to the circuit → showroom (choose a car) → free drive.
+**Flow:** Moon map → dive to the circuit → showroom (choose a car) → timed laps against the ghost of your best lap.
 
 ## Play
 
@@ -13,17 +13,41 @@ A 3D driving game in the browser. You start on a draggable map of the Moon, pick
 | `A` `D` / `←` `→` | Steer |
 | `Space` | Handbrake |
 | `C` | Switch between chase camera and cockpit view |
-| `R` | Reset the car onto the track |
-| `Esc` | Pause menu (resume, change car, back to the map) |
+| `R` | Reset the car onto the track (voids the lap) |
+| `T` | Restart the lap from the start lights |
+| `Esc` | Pause menu (resume, restart lap, ghost on/off, change car, back to the map, clear best laps) |
+
+### PS5 controller (DualSense)
+
+Connect it by USB or Bluetooth, then press any button so the browser notices it. Works in Chrome, Edge and Safari (any "standard" controller works, such as Xbox).
+
+| Button | What it does |
+|---|---|
+| `R2` / `L2` | Throttle / brake and reverse (pressure-sensitive) |
+| Left stick | Steer |
+| `□` Square | Handbrake |
+| `△` Triangle | Chase or cockpit camera |
+| `○` Circle | Reset onto the track. In menus: back |
+| `Create` | Restart the lap |
+| `Options` | Pause menu |
+| D-pad, `✕` Cross | Move between buttons and change car; Cross confirms |
+
+### Lap timing
+
+- Press Drive: three red lights, then GO. The clock starts on GO. Lap 1 is a standing start, every lap after it is a flying lap.
+- The start/finish line is the checkered strip on the main straight. Sector splits are at 1.1 km and 2.47 km. Each sector bar turns green (ahead of your best) or red (behind), and yellow for a new best lap.
+- Falling off the edge or pressing reset makes the lap **void**: it is still timed but can't become your best.
+- Your best lap is saved per car in the browser (`localStorage` key `moon-racer-v1`), with a **ghost**: a see-through cyan car that replays it. Switch it off in the pause menu.
 
 The track has no barriers: drive off the edge and you fall towards the Moon, then you are put back where you left.
-Driving is keyboard only for now. On a phone you can use the map and the showroom, but not drive.
+On a phone you can use the map and the showroom. Drive switches on only when a game controller is connected.
 
 ## What is in it
 
 - **Circuit:** Tranquility Circuit, 3.3 km, placed on the map at Tranquility Base (0.67° N, 23.47° E).
 - **Cars:** BYD Yangwang U9 (500 km/h top speed) and Ferrari LaFerrari (300 km/h).
 - **Physics:** simple arcade driving with normal Earth-like gravity (no Moon physics yet).
+- **Time trial:** lap timer with three sectors, void laps, best lap and ghost per car.
 
 ## Run it on your computer
 
@@ -44,6 +68,8 @@ Then open http://localhost:8768 in your browser.
 - `js/track.js`: road markings, light strips, the drivable surface and where thrusters go.
 - `js/cars.js`: the two cars and their settings (top speed, acceleration, grip, driver's eye position).
 - `js/vehicle.js`: the driving physics.
+- `js/laps.js`: lap timing rules (countdown, line and split gates, void laps, best laps, ghost recording, saving). No 3D in it.
+- `js/gamepad.js`: game controller input (PS5 DualSense layout).
 - `js/sky.js`: stars, Earth and reflections.
 - `assets/models/`: web-sized 3D models. `assets/data/track.json`: the track's edges.
 - `tools/build_assets.py`: turns the original (large) asset files into the small web files above.
@@ -63,7 +89,13 @@ The originals (about 300 MB, including a 241 MB map) are not in this repo.
 
 ## Releasing
 
-Bump the `?v=NN` on `css/style.css` and `js/main.js` in `index.html` with every release (now `?v=2`).
+Bump the `?v=NN` on `css/style.css` and `js/main.js` in `index.html`, and on the `game.js`, `laps.js` and `gamepad.js` imports inside the scripts, with every release (now `?v=3`).
+
+## Testing in the browser console
+
+- `__mr.debug.sim(seconds, {throttle: 1})` fast-forwards the physics.
+- `__mr.debug.autoLap()` drives one lap on autopilot and reports where it left the road.
+- `__mr.debug.timedLaps(2)` drives laps through the real lap timer (skips the countdown). At full pace the autopilot often drives off the edge, so its laps come out void.
 
 ## Credits
 

@@ -10,12 +10,17 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { buildTrack, podPositions, CYAN } from './track.js';
 import { CARS, prepareCar, animateWheels } from './cars.js';
 import { Vehicle } from './vehicle.js';
+import { createLaps } from './laps.js?v=3';
 import { createSky, createEnvironment, glowTexture } from './sky.js';
 
 // ---------- scene settings ----------
 const SUN_DIR = new THREE.Vector3(0.58, 0.46, 0.67).normalize();     // direction towards the sun
 const MOON_OFFSET = new THREE.Vector3(791, 185, -12);                // puts a crater floor under the circuit
 const POD = { scale: 20, neck: 2.6, flame: 26 };
+// timing: the start/finish line is the checkered strip at the start of the lap; splits at these distances (metres)
+const CIRCUIT_ID = 'tranquility';
+const SPLITS = [1100, 2470];
+const GRID_BACK = 2;                                                  // sections behind the line where the car waits for GO
 const FILES = {
   moon: ['assets/models/moon-surface.glb', 9.8],
   track: ['assets/models/track.glb', 1.2],
@@ -25,9 +30,10 @@ const FILES = {
 };
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const LAPS_SKIP = 99;                                                 // debug: a step long enough to finish the countdown
 const smooth = t => t * t * t * (t * (t * 6 - 15) + 10);
 
-export async function createGame({ canvas, onProgress = () => {}, onHud = () => {}, onNote = () => {} }) {
+export async function createGame({ canvas, onProgress = () => {}, onHud = () => {}, onNote = () => {}, onLap = () => {}, readPad = null }) {
   const timing = {}, t0 = performance.now();
   const mark = name => { timing[name] = Math.round(performance.now() - t0); };
   const breathe = () => new Promise(r => setTimeout(r, 0));     // let the map stay responsive while this builds
@@ -160,6 +166,15 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
   const track = buildTrack(trackG.scene, trackData, renderer);
   scene.add(track.group);
   const trackCentre = track.box.getCenter(new THREE.Vector3());
+
+  // ---------- lap timing gates ----------
+  const gateAt = index => {
+    const c = track.centre[index], L = trackData.left[index], R = trackData.right[index];
+    return { index, x: c.x, y: c.y, z: c.z, tx: c.tx, tz: c.tz, half: Math.hypot(L[0] - R[0], L[2] - R[2]) / 2 };
+  };
+  const sectionAt = d => track.centre.findIndex(p => p.dist >= d);
+  const gates = [gateAt(0), ...SPLITS.map(d => gateAt(sectionAt(d)))];
+  const laps = createLaps({ circuitId: CIRCUIT_ID, gates, onEvent: e => onLap(e) });
 
   // sun shadow: one big static map for the circuit's shadow on the Moon
   {
@@ -381,6 +396,47 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
     shadowDecal.material.uniforms.uMatrix.value.multiplyMatrices(shadowCam.projectionMatrix, _m.copy(shadowCam.matrixWorld).invert());
   }
 
+  // ---------- ghost: a see-through copy of the car replaying your best lap ----------
+  const ghostMat = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: CYAN.clone() }, uOpacity: { value: 1 } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: 'varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
+    fragmentShader: /* glsl */`
+      uniform vec3 uColor; uniform float uOpacity; varying vec3 vN; varying vec3 vV;
+      void main(){
+        float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));     // bright at the outline, faint face-on
+        float a = (0.05 + 0.6 * pow(f, 2.2)) * uOpacity;
+        gl_FragColor = vec4(uColor * 1.4, a);
+      }`,
+  });
+  const ghosts = cars.map(c => {
+    const root = c.root.clone(true), map = new Map(), a = [], b = [];
+    c.root.traverse(o => a.push(o)); root.traverse(o => b.push(o));
+    a.forEach((o, i) => map.set(o, b[i]));
+    root.traverse(o => {
+      if (!o.isMesh) return;
+      o.material = ghostMat; o.layers.disable(2); o.renderOrder = 3; o.visible = true;
+    });
+    root.visible = false;
+    scene.add(root);
+    return { root, body: map.get(c.body), wheels: c.wheels.map(w => ({ ...w, steer: map.get(w.steer), spin: map.get(w.spin) })) };
+  });
+  const ghostState = { x: 0, y: 0, z: 0, heading: 0, pitch: 0, roll: 0, steerAngle: 0, vF: 0 };
+  let ghost = ghosts[0];
+  function updateGhost(dt) {
+    const t = laps.phase === 'running' ? laps.clock : 0;
+    const on = state === 'drive' && laps.phase !== 'idle' && laps.ghostAt(t, ghostState);
+    ghost.root.visible = !!on;
+    if (!on) return;
+    const g = ghostState;
+    ghost.root.position.set(g.x, g.y, g.z);
+    ghost.root.rotation.set(-g.pitch, g.heading, g.roll, 'YXZ');
+    animateWheels(ghost, g, dt);
+    // fade out when it is right on top of you, so it never hides the road
+    const d = Math.hypot(g.x - veh.x, g.y - veh.y, g.z - veh.z);
+    ghostMat.uniforms.uOpacity.value = clamp((d - 1.5) / 10, 0.2, 1);
+  }
+
   mark('cars');
   await breathe();
   // ---------- state ----------
@@ -401,6 +457,8 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
   function selectCar(i) {
     cars.forEach((c, k) => { c.root.visible = k === i; });
     car = cars[i];
+    ghosts.forEach(g => { g.root.visible = false; });
+    ghost = ghosts[i];
     veh.setCar(car);
     setCamMode(camMode);
   }
@@ -448,26 +506,48 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
     input.brake = k('KeyS') || k('ArrowDown') ? 1 : 0;
     input.steer = (k('KeyA') || k('ArrowLeft') ? 1 : 0) - (k('KeyD') || k('ArrowRight') ? 1 : 0);
     input.handbrake = k('Space');
+    // a game controller adds to the keyboard: whichever is pushed further wins
+    const p = readPad && readPad();
+    if (p && p.connected) {
+      input.throttle = Math.max(input.throttle, p.throttle);
+      input.brake = Math.max(input.brake, p.brake);
+      if (!input.steer) input.steer = p.steer;
+      input.handbrake = input.handbrake || p.handbrake;
+    }
   }
 
-  function respawn(message) {
+  function respawn(message, reason) {
+    if (laps.frozen) return;                                  // already waiting on the line
+    const voids = laps.phase === 'running' && !laps.view().void;
+    laps.voidLap(reason || message);                          // shows "<reason>: lap void"
     placeAtStart(safeIdx);
-    if (message) onNote(message);
+    laps.teleported();
+    if (message && !voids) onNote(message);
+  }
+  const gridIndex = () => (track.centre.length - GRID_BACK) % track.centre.length;
+  function toGrid() {
+    placeAtStart(gridIndex());
+    laps.begin(CARS[cars.indexOf(car)].id);
   }
 
   function updateDrive(dt) {
     readInput();
-    const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
-    for (let i = 0; i < steps; i++) veh.step(input, dt / steps);
+    if (laps.frozen) {
+      laps.step(dt, veh);                                     // counting down: the car waits on the line
+    } else {
+      const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
+      for (let i = 0; i < steps; i++) { veh.step(input, dt / steps); laps.step(dt / steps, veh); }
+    }
     if (veh.grounded) {
       safeIdx = track.nearest(veh.x, veh.z, safeIdx, 60);
       fallTimer = 0;
     } else {
       fallTimer += dt;
-      if (veh.y < veh.lastGroundY - 20 || fallTimer > 3.5) respawn('Back on track');
+      if (veh.y < veh.lastGroundY - 20 || fallTimer > 3.5) respawn('Back on track', 'Fell off');
     }
     syncCar(dt);
-    onHud({ speed: veh.speed, x: veh.x, z: veh.z });
+    updateGhost(dt);
+    onHud({ speed: veh.speed, x: veh.x, z: veh.z, lap: laps.view() });
   }
 
   const _fwd = new THREE.Vector3(), _eye = new THREE.Vector3(), _q = new THREE.Quaternion(), _flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
@@ -570,10 +650,11 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     if (e.repeat) return;
     keys.add(e.code);
-    if (e.code === 'KeyC') { setCamMode(camMode === 'chase' ? 'cockpit' : 'chase'); onNote(camMode === 'chase' ? 'Chase camera' : 'Cockpit camera'); }
+    if (e.code === 'KeyC') cycleCamera();
     if (e.code === 'KeyR') respawn('Reset');
   });
   window.addEventListener('keyup', e => keys.delete(e.code));
+  function cycleCamera() { setCamMode(camMode === 'chase' ? 'cockpit' : 'chase'); onNote(camMode === 'chase' ? 'Chase camera' : 'Cockpit camera'); }
   window.addEventListener('blur', () => keys.clear());
 
   // first render: builds the static shadow map and compiles the shaders while the screen is still dark
@@ -584,6 +665,7 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
   camera.lookAt(camLook);
   scene.updateMatrixWorld(true);
   cars.forEach(c => { c.root.visible = true; });           // so both cars' shaders get compiled now, not on first use
+  ghosts.forEach(g => { g.root.visible = true; });
   if (renderer.compileAsync) await renderer.compileAsync(scene, camera);
   mark('compiled');
   await breathe();
@@ -597,15 +679,25 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
     cars: CARS.map(c => ({ name: c.name, topSpeed: c.topSpeed })),
     trackOutline: track.outline,
     start() { if (running) return; running = true; resize(); last = performance.now(); raf = requestAnimationFrame(frame); },
-    stop() { running = false; cancelAnimationFrame(raf); keys.clear(); state = 'idle'; paused = false; setCamMode('chase'); },
+    stop() { running = false; cancelAnimationFrame(raf); keys.clear(); state = 'idle'; paused = false; laps.stop(); setCamMode('chase'); },
     playIntro() {
       state = 'intro';
       return new Promise(resolve => { intro = { t: 0, duration: 4.6, resolve }; });
     },
     showCar(i) { selectCar(i); if (state !== 'drive') carToPad(); },
-    showroom(i) { state = 'showroom'; selectCar(i); setCamMode('chase'); keys.clear(); shadowDecal.visible = true; },
-    drive(i) { state = 'drive'; selectCar(i); placeAtStart(0); setCamMode('chase'); keys.clear(); },
+    showroom(i) { state = 'showroom'; laps.stop(); selectCar(i); setCamMode('chase'); keys.clear(); shadowDecal.visible = true; },
+    drive(i) { state = 'drive'; selectCar(i); toGrid(); setCamMode('chase'); keys.clear(); },
     pause(v) { paused = v; keys.clear(); last = performance.now(); },
+    // driving actions (keyboard and controller both come through here)
+    cycleCamera() { if (state === 'drive' && !paused) cycleCamera(); },
+    resetCar() { if (state === 'drive' && !paused) respawn('Reset'); },
+    restartLap() { if (state === 'drive') { toGrid(); keys.clear(); } },
+    // lap times and the ghost
+    bestFor: i => laps.bestFor(CARS[i].id),
+    get ghostOn() { return laps.ghostOn; },
+    setGhost(on) { laps.setGhost(on); },
+    clearBests() { laps.clearBests(); },
+    laps,
     // handles for testing in the browser console
     debug: { scene, camera, renderer, veh, track, pods, cars, pad, sun, get car() { return car; }, get state() { return state; }, keys, sky, bloom, moon, freeCam: null, timing,
       // run the driving physics for a while without waiting for real time (testing only)
@@ -655,7 +747,33 @@ export async function createGame({ canvas, onProgress = () => {}, onHud = () => 
         }
         syncCar(0);
         return { lapSeconds: +t.toFixed(1), topKmh: Math.round(top * 3.6), falls, sectionsDone: progress, of: n, longestAir: +airMax.toFixed(2), where };
-      } },
+      },
+      // drive timed laps on autopilot through the real lap timer (testing only). Skips the countdown.
+      timedLaps(count = 2, pace = 0.8, maxSeconds = 900) {
+        const n = track.centre.length, dt = 1 / 120, inp = { throttle: 0, brake: 0, steer: 0, handbrake: false }, out = [];
+        const stopAt = laps.view().lapNo + count;
+        if (laps.phase === 'idle') toGrid();
+        laps.step(LAPS_SKIP, veh);
+        for (let t = 0; t < maxSeconds && laps.view().lapNo < stopAt; t += dt) {
+          const sp = veh.speed, tg = track.centre[(safeIdx + Math.round(4 + sp * 0.22)) % n];
+          let ang = Math.atan2(tg.x - veh.x, tg.z - veh.z) - veh.heading;
+          while (ang > Math.PI) ang -= 2 * Math.PI; while (ang < -Math.PI) ang += 2 * Math.PI;
+          inp.steer = clamp(ang * 3, -1, 1);
+          let vt = veh.vmax;
+          for (let a = 0; a < 120; a++) {
+            const c = Math.abs(track.centre[(safeIdx + a) % n].curv);
+            if (c > 1e-4) vt = Math.min(vt, Math.sqrt(car.spec.grip * pace / c) + a * 0.35);
+          }
+          inp.throttle = sp < vt ? 1 : 0; inp.brake = sp > vt * 1.05 ? 1 : 0;
+          veh.step(inp, dt); laps.step(dt, veh);
+          if (veh.grounded) safeIdx = track.nearest(veh.x, veh.z, safeIdx, 60);
+          else if (veh.y < veh.lastGroundY - 20) { laps.voidLap('Fell off'); placeAtStart(safeIdx); laps.teleported(); }
+        }
+        syncCar(0); camYaw = veh.heading;
+        return laps.view();
+      },
+      gates,
+    },
   };
   return api;
 }

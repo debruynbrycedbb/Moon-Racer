@@ -1,5 +1,7 @@
 // Moon Racer: screen flow.  map -> (dive) -> showroom -> drive
 import { createMap, lonLatToWorld, worldToLonLat } from './map.js';
+import { initGamepad, onButton, pad } from './gamepad.js?v=3';
+import { formatTime, formatDelta } from './laps.js?v=3';
 
 // The one circuit for now. Position = Tranquility Base (Apollo 11 landing site).
 const CIRCUIT = { number: '01', name: 'Tranquility Circuit', lon: 23.47, lat: 0.67 };
@@ -43,12 +45,14 @@ map.view.x = spot.x + (window.innerWidth < 720 ? 480 : -500); map.view.y = spot.
 let game = null, gamePromise = null, progress = 0, busy = false, state = 'map';
 function loadGame() {
   if (!gamePromise) {
-    gamePromise = import('./game.js')
+    gamePromise = import('./game.js?v=3')
       .then(m => m.createGame({
         canvas,
         onProgress: p => { progress = p; veilBar.style.width = Math.round(p * 100) + '%'; },
         onHud: updateHud,
         onNote: showNote,
+        onLap: onLapEvent,
+        readPad: pad,
       }))
       .then(g => { game = g; window.__mr = g; fillShowroom(); return g; });
     gamePromise.catch(err => {
@@ -119,10 +123,16 @@ let carIndex = 0;
 const keyboardLikely = !window.matchMedia('(hover: none) and (pointer: coarse)').matches;
 function fillShowroom() {
   setCar(0);
-  if (!keyboardLikely) {
-    $('drive-btn').disabled = true;
-    $('drive-hint').textContent = 'Driving needs a keyboard for now. Open Moon Racer on a computer to drive.';
-  }
+  updateControlHints();
+}
+function updateControlHints() {
+  const usePad = pad().connected;
+  $('drive-btn').disabled = !keyboardLikely && !usePad;
+  $('drive-hint').textContent = usePad ? 'Controller ready: R2 to accelerate, ✕ to start'
+    : keyboardLikely ? 'Arrow keys or W A S D to drive · a PS5 controller works too'
+    : 'Driving needs a keyboard or a game controller. Open Moon Racer on a computer, or connect a controller.';
+  $('hud-keys').hidden = usePad;
+  $('hud-pad').hidden = !usePad;
 }
 function setCar(i) {
   const n = game.cars.length;
@@ -132,6 +142,11 @@ function setCar(i) {
   $('car-speed').textContent = c.topSpeed;
   $('hud-car').textContent = c.name;
   game.showCar(carIndex);
+  showBest();
+}
+function showBest() {
+  const t = game.bestFor(carIndex);
+  $('car-best').textContent = t == null ? 'No lap time yet' : 'Best lap ' + formatTime(t);
 }
 $('car-prev').addEventListener('click', () => state === 'showroom' && setCar(carIndex - 1));
 $('car-next').addEventListener('click', () => state === 'showroom' && setCar(carIndex + 1));
@@ -148,7 +163,6 @@ async function startDrive() {
   show('hud');
   setVeil(false);
   busy = false;
-  showNote('Free drive', 2200);
 }
 
 async function toShowroom() {
@@ -157,6 +171,7 @@ async function toShowroom() {
   closeMenu();
   await setVeil(true);
   game.showroom(carIndex);
+  showBest();
   state = 'showroom';
   show('showroom');
   setVeil(false);
@@ -179,11 +194,71 @@ function buildMinimap() {
 function updateHud(h) {
   const kmh = Math.round(h.speed * 3.6);
   if (kmh !== lastSpeed) { hudSpeed.textContent = kmh; lastSpeed = kmh; }
+  if (h.lap) updateLapHud(h.lap);
   if (mini) {
     miniCar.setAttribute('cx', ((h.x - mini.x0) * mini.s).toFixed(1));
     miniCar.setAttribute('cy', ((h.z - mini.z0) * mini.s).toFixed(1));
   }
 }
+// ---------- lap timer ----------
+const lapEl = $('hud-lap'), lapClock = $('lap-clock'), lapNo = $('lap-no'), lapBest = $('lap-best');
+const lights = $('hud-lights'), splitEl = $('hud-split');
+const sectorEls = [...document.querySelectorAll('#lap-sectors li')];
+let goUntil = 0, splitTimer = 0, shown = {};
+const setText = (el, key, text) => { if (shown[key] !== text) { el.textContent = text; shown[key] = text; } };
+
+function updateLapHud(v) {
+  setText(lapClock, 'clock', formatTime(v.phase === 'running' ? v.clock : 0));
+  setText(lapNo, 'no', 'Lap ' + v.lapNo);
+  setText(lapBest, 'best', v.best == null ? '–' : formatTime(v.best));
+  lapEl.classList.toggle('is-void', v.void);
+  sectorEls.forEach((el, k) => el.classList.toggle('is-current', v.phase === 'running' && k === v.splits.length));
+  // countdown: one more red light every second, then all green on GO
+  const counting = v.phase === 'countdown', go = performance.now() < goUntil;
+  lights.hidden = !counting && !go;
+  if (!lights.hidden) {
+    const on = counting ? Math.min(3, Math.max(1, 4 - Math.ceil(v.countdown))) : 3;
+    lights.classList.toggle('is-go', !counting);
+    [...lights.children].forEach((l, k) => l.classList.toggle('is-on', k < on));
+  }
+}
+function flashSplit(html, cls, ms = 3000) {
+  splitEl.innerHTML = html;
+  splitEl.className = 'hud__split is-on ' + cls;
+  clearTimeout(splitTimer);
+  splitTimer = setTimeout(() => splitEl.classList.remove('is-on'), ms);
+}
+const deltaClass = d => (d == null ? '' : d <= 0 ? 'is-faster' : 'is-slower');
+function onLapEvent(e) {
+  if (e.type === 'countdown') {
+    sectorEls.forEach(el => { el.className = ''; });
+    splitEl.classList.remove('is-on');
+    goUntil = 0;
+  } else if (e.type === 'go') {
+    goUntil = performance.now() + 900;
+  } else if (e.type === 'split') {
+    const cls = e.void ? 'is-void' : deltaClass(e.delta) || 'is-done';
+    sectorEls[e.sector - 1].className = cls;
+    flashSplit(`<b>Sector ${e.sector}</b> ${formatTime(e.time)} <em>${formatDelta(e.delta)}</em>`, cls);
+  } else if (e.type === 'void') {
+    showNote(`${e.reason}: lap void`, 2200);
+  } else if (e.type === 'lap') {
+    const last = sectorEls[sectorEls.length - 1];
+    if (!e.valid) {
+      last.className = 'is-void';
+      flashSplit(`<b>Lap void</b> ${formatTime(e.time)} <em>not counted</em>`, 'is-void', 3500);
+    } else if (e.isBest) {
+      last.className = 'is-best';
+      flashSplit(`<b>New best lap</b> ${formatTime(e.time)} <em>${formatDelta(e.delta)}</em>`, 'is-best', 4500);
+    } else {
+      last.className = deltaClass(e.delta);
+      flashSplit(`<b>Lap</b> ${formatTime(e.time)} <em>${formatDelta(e.delta)}</em>`, deltaClass(e.delta), 3500);
+    }
+    // the next lap starts now: clear the sector bars after a moment
+    setTimeout(() => sectorEls.forEach(el => { if (state === 'drive') el.className = ''; }), 2500);
+  }
+}
+
 function showNote(text, ms = 1600) {
   note.textContent = text;
   note.classList.add('is-on');
@@ -193,11 +268,32 @@ function showNote(text, ms = 1600) {
 
 // ---------- pause menu ----------
 const menu = $('menu');
-function openMenu() { menu.hidden = false; game.pause(true); $('menu-resume').focus(); }
+function openMenu() { menu.hidden = false; game.pause(true); showGhostLabel(); $('menu-clear').textContent = 'Clear best laps'; $('menu-resume').focus(); }
 function closeMenu() { if (menu.hidden) return; menu.hidden = true; if (game) game.pause(false); }
 $('menu-resume').addEventListener('click', closeMenu);
 $('menu-car').addEventListener('click', toShowroom);
 $('menu-map').addEventListener('click', () => backToMap());
+$('menu-restart').addEventListener('click', restartLap);
+$('menu-ghost').addEventListener('click', () => { game.setGhost(!game.ghostOn); showGhostLabel(); });
+let clearArmed = 0;
+$('menu-clear').addEventListener('click', () => {
+  // two presses, so a slip of the finger does not wipe your times
+  if (performance.now() > clearArmed) {
+    clearArmed = performance.now() + 3000;
+    $('menu-clear').textContent = 'Press again to clear all best laps';
+    setTimeout(() => { $('menu-clear').textContent = 'Clear best laps'; }, 3000);
+    return;
+  }
+  clearArmed = 0;
+  game.clearBests();
+  $('menu-clear').textContent = 'Best laps cleared';
+});
+function showGhostLabel() { $('menu-ghost').textContent = 'Ghost: ' + (game.ghostOn ? 'on' : 'off'); }
+function restartLap() {
+  if (state !== 'drive') return;
+  closeMenu();
+  game.restartLap();
+}
 
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
@@ -207,7 +303,63 @@ window.addEventListener('keydown', e => {
   } else if (state === 'showroom' && !busy) {
     if (e.key === 'ArrowLeft') setCar(carIndex - 1);
     else if (e.key === 'ArrowRight') setCar(carIndex + 1);
+  } else if (state === 'drive' && !busy && menu.hidden && e.code === 'KeyT' && !e.repeat) {
+    restartLap();
   }
+});
+
+// ---------- game controller (PS5 DualSense and other standard pads) ----------
+const credits = $('credits');
+function activeLayer() {
+  if (credits.open) return credits;
+  if (!menu.hidden) return menu;
+  return screens[state] || null;
+}
+function moveFocus(dir) {
+  const layer = activeLayer();
+  if (!layer) return;
+  const list = [...layer.querySelectorAll('button:not([disabled])')].filter(b => b.offsetParent !== null);
+  if (!list.length) return;
+  const i = list.indexOf(document.activeElement);
+  list[(i < 0 ? 0 : i + dir + list.length) % list.length].focus();
+}
+function confirmPress() {
+  const layer = activeLayer(), el = document.activeElement;
+  if (layer && el && el.tagName === 'BUTTON' && layer.contains(el)) { el.click(); return; }
+  if (credits.open) credits.close();
+  else if (!menu.hidden) closeMenu();
+  else if (state === 'map') enterCircuit();
+  else if (state === 'showroom') startDrive();
+}
+function goBack() {
+  if (credits.open) credits.close();
+  else if (!menu.hidden) closeMenu();
+  else if (state === 'showroom' && !busy) backToMap();
+}
+onButton(name => {
+  if (busy) return;
+  const driving = state === 'drive' && menu.hidden;
+  if (driving) {
+    if (name === 'options') openMenu();
+    else if (name === 'triangle') game.cycleCamera();
+    else if (name === 'circle') game.resetCar();
+    else if (name === 'create') restartLap();
+    return;
+  }
+  if (name === 'options' && state === 'drive') closeMenu();
+  else if (name === 'cross') confirmPress();
+  else if (name === 'circle') goBack();
+  else if (name === 'up') moveFocus(-1);
+  else if (name === 'down') moveFocus(1);
+  else if (state === 'showroom' && menu.hidden && (name === 'left' || name === 'right')) setCar(carIndex + (name === 'left' ? -1 : 1));
+});
+initGamepad({
+  onConnect: () => { updateControlHints(); showNote('Controller connected', 2000); },
+  onDisconnect: () => {
+    updateControlHints();
+    showNote('Controller disconnected', 2400);
+    if (state === 'drive' && menu.hidden && !busy) openMenu();
+  },
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && state === 'drive' && menu.hidden && !busy) openMenu();
