@@ -167,6 +167,25 @@ small { font-size: inherit; }
 .circuit-card .btn { width: 100%; margin-top: 16px; }
 .circuit-card__hint { margin-top: 10px; font-size: 13px; color: var(--dust); }
 
+.link-btn {
+  margin-top: 10px; padding: 4px 0; border: 0; background: none;
+  font-size: 13px; color: var(--regolith); text-decoration: underline; text-underline-offset: 3px;
+}
+.link-btn:hover { color: var(--cyan); }
+
+/* ---------- credits ---------- */
+.credits {
+  width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto;
+  padding: 26px 26px 22px; color: var(--text);
+  background: #0b0e12; border: 1px solid var(--line); border-top: 3px solid var(--cyan);
+}
+.credits::backdrop { background: rgba(5, 7, 10, .7); backdrop-filter: blur(4px); }
+.credits h2 { font-family: var(--display); font-weight: 400; font-size: 32px; line-height: 1; text-transform: uppercase; }
+.credits p { margin-top: 12px; color: var(--regolith); }
+.credits ul { margin: 16px 0 20px; display: grid; gap: 10px; font-size: 15px; }
+.credits li { padding-left: 14px; border-left: 2px solid var(--hazard); }
+.credits a { color: var(--cyan); }
+
 /* ---------- 2. showroom ---------- */
 .back-btn { position: absolute; left: clamp(16px, 3vw, 40px); top: clamp(14px, 2.6vw, 34px); }
 .show-panel {

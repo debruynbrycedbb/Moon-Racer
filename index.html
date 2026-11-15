@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@400;500;600&family=Saira+Stencil+One&display=swap" rel="stylesheet">
 <link rel="preload" as="image" href="assets/map/base.webp">
-<link rel="stylesheet" href="css/style.css?v=1">
+<link rel="stylesheet" href="css/style.css?v=2">
 <script type="importmap">
 {
   "imports": {
@@ -57,6 +57,7 @@
     <p class="circuit-card__meta">Mare Tranquillitatis · 0.67° N, 23.47° E · 3.3 km</p>
     <button type="button" class="btn btn--go" id="go-circuit">Go to circuit</button>
     <p class="circuit-card__hint">Or drag the map and pick the marker.</p>
+    <button type="button" class="link-btn" id="credits-open">Credits and licences</button>
   </aside>
 </main>
 
@@ -108,6 +109,22 @@
   </div>
 </div>
 
+<!-- Credits -->
+<dialog id="credits" class="credits" aria-labelledby="credits-title">
+  <h2 id="credits-title">Credits</h2>
+  <p>Moon Racer is a personal, non-commercial fan project. It is not affiliated with or endorsed by BYD, Ferrari or NASA.</p>
+  <ul>
+    <li><b>BYD Yangwang U9</b> 3D model by Ddiaz Design, from Sketchfab, licensed <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>. Used unchanged.</li>
+    <li><b>Ferrari LaFerrari</b> 3D model: [author and licence to be supplied]. Used unchanged.</li>
+    <li><b>Race track</b> 3D model: [author and licence to be supplied]. Faces corrected, road rebuilt with markings.</li>
+    <li><b>Thruster</b> 3D model: [author and licence to be supplied]. Textures shrunk, painted number removed.</li>
+    <li><b>Moon surface</b> 3D model: [author and licence to be supplied]. File size reduced.</li>
+    <li><b>Moon map</b>: [source to be confirmed]. Colours darkened, cut into tiles.</li>
+    <li>Built with three.js (MIT licence). Typefaces: Saira Stencil One and Saira Semi Condensed (SIL Open Font License).</li>
+  </ul>
+  <form method="dialog"><button class="btn" id="credits-close">Close</button></form>
+</dialog>
+
 <!-- Fade + loading -->
 <div id="veil" class="veil" aria-live="polite">
   <p class="veil__text" id="veil-text"></p>
@@ -115,6 +132,6 @@
 </div>
 
 <noscript><p class="noscript">Moon Racer needs JavaScript to run.</p></noscript>
-<script type="module" src="js/main.js?v=1"></script>
+<script type="module" src="js/main.js?v=2"></script>
 </body>
 </html>

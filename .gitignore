@@ -1,3 +1,6 @@
 .DS_Store
+.claude/
 __pycache__/
 *.pyc
+# Original downloads, if they are ever kept here. The game loads the web-sized copies in assets/.
+3D Models/

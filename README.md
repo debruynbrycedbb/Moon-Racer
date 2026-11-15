@@ -63,8 +63,23 @@ The originals (about 300 MB, including a 241 MB map) are not in this repo.
 
 ## Releasing
 
-Bump `?v=1` on `css/style.css` and `js/main.js` in `index.html` with every release.
+Bump the `?v=NN` on `css/style.css` and `js/main.js` in `index.html` with every release (now `?v=2`).
+
+## Credits
+
+Moon Racer is a personal, non-commercial fan project. It is not affiliated with or endorsed by BYD, Ferrari or NASA.
+
+| Asset | Author and licence | Changes |
+|---|---|---|
+| BYD Yangwang U9 | Ddiaz Design, via Sketchfab, [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) | none |
+| Ferrari LaFerrari (2013) | [Author and licence — to be supplied] | none |
+| Race track "C .001, 3.3 km" | [Author and licence — to be supplied] | faces corrected, road rebuilt with markings |
+| "BIII-5 Military Thruster" | [Author and licence — to be supplied] | textures shrunk, painted "05" removed |
+| Moon surface terrain | [Author and licence — to be supplied] | file size reduced |
+| Moon colour map | [Source to be confirmed] | colours darkened, cut into tiles |
+
+The same list is in the game (Credits and licences, on the map screen) and in [CREDITS.md](CREDITS.md).
 
 ## Still to fill in
 
-See [CREDITS.md](CREDITS.md): the authors and licences of four of the 3D models and the source of the Moon map are marked `[in square brackets]`.
+Everything marked `[in square brackets]` in the credits above: the authors and licences of four of the 3D models, and the source of the Moon map. Update all three places together: this README, `CREDITS.md` and the Credits panel in `index.html`.

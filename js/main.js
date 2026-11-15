@@ -33,6 +33,7 @@ map.onHover(p => {
 $('zoom-in').addEventListener('click', () => map.zoomBy(1.6));
 $('zoom-out').addEventListener('click', () => map.zoomBy(1 / 1.6));
 $('go-circuit').addEventListener('click', enterCircuit);
+$('credits-open').addEventListener('click', () => $('credits').showModal());
 
 // Opening move: start wide, drift towards the near side where the circuit is.
 // (on a phone the marker sits left of centre so its label fits on screen)
